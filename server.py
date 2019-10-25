@@ -45,8 +45,9 @@ def help_me():
     return "Sure! I can help. Below are the commands that I understand:<br/>" \
            "`Help me` - I will display what I can do.<br/>" \
            "`Hello` - I will display my greeting message<br/>" \
-           "`eox` - Provide a product ID and I will reply with End of Life Data.  e.g. *eox C3925-AX/K9*<br/>"
-
+           "`pid` - Provide a product ID and I will reply with End of Life Data.  e.g. *pid C3925-AX/K9*<br/>" \
+           "`serial` - Provide a serial and I will reply with Smartnet Coverage and End of Life Data. e.g. *serial FHX75UH03459"\
+           "" 
 
 def greetings():
 
@@ -80,8 +81,49 @@ def get_eoxbyPID(hwPID):
       MigrationStrat = data['EOXRecord'][0]["EOXMigrationDetails"]["MigrationStrategy"]
       BulletinNum = data['EOXRecord'][0]["ProductBulletinNumber"]
 
-      return "**End of Sale:** " + EoS + "<br>**End of Service Renewal:** " + EoSR + "<br>**Last Day of Support:** " + LDoS + "<br>**Migration Product:** [" + MigrationPID + "](" + MigrationURL + ") <br>**URL Bulletin:** [" + BulletinNum + "]("+ BulletinURL +")" 
+      return "**End of Sale Date:** ................... " + EoS +\
+      "<br>**End of Service Renewal:** ......" + EoSR +\
+      "<br>**Last Day of Support:** ............." + LDoS +\
+      "<br>**Migration Product:** [" + MigrationPID + "](" + MigrationURL + ") <br>**URL Bulletin:** [" + BulletinNum + "]("+ BulletinURL +")" 
 
+
+def get_coveragebySerial(serial):
+  """returns coverage data when given a serial."""
+  token = get_token(client_id, client_secret)
+  url = "https://api.cisco.com/sn2info/v2/coverage/summary/serial_numbers/" + serial
+  headers = {
+    'Content-Type': "application/json",
+    'authorization': "" + token['token_type'] + " " + token['access_token'],
+    'cache-control': "no-cache"
+    }
+
+  response = requests.request("GET", url, headers=headers)
+
+  data = json.loads(response.text)
+  if 'ErrorResponse' in data['serial_numbers'][0].keys():
+      return_val = data['serial_numbers'][0]['ErrorResponse']['APIError']['ErrorDescription']
+  elif 'serial_numbers' in data.keys():
+    
+    pid = data['serial_numbers'][0]["base_pid_list"][0]["base_pid"]
+    status = data['serial_numbers'][0]["is_covered"]
+    serviceLevel = data['serial_numbers'][0]["service_line_descr"]
+    endDate = data['serial_numbers'][0]["covered_product_line_end_date"]
+    contractNum = data['serial_numbers'][0]["service_contract_number"]  
+    contractNum = contractNum[5:]
+   
+    return_val = "**Product ID:** ................. " + pid +\
+      "<br>**Coverage Status:** ....... " + status +\
+      "<br>**Service Level:** ............. " + serviceLevel +\
+      "<br>**Covered End Date:** .... " + endDate +\
+      "<br>**Contract Number:** ..... xxxxx" + contractNum
+  else:
+    print "Item not found"
+    return_val = "Something went wrong"
+    
+  return return_val
+
+
+  
 app = Flask(__name__)
 @app.route('/', methods=['GET', 'POST'])
 def teams_webhook():
@@ -108,12 +150,18 @@ def teams_webhook():
                 msg = help_me()
             elif in_message.startswith('hello'):
                 msg = greetings()
-            elif in_message.startswith('eox'):
+            elif in_message.startswith('pid'):
               if len(in_message) == 3 :
-                msg = "Please enter a Product ID. e.g. *eox C3925-AX/K9*"
+                msg = "Please enter a Product ID. e.g. *pid C3925-AX/K9*"
               else:
-                pid = in_message.split('eox ')[1]
+                pid = in_message.split('pid ')[1]
                 msg = get_eoxbyPID(pid)
+            elif in_message.startswith('serial'):
+              if len(in_message) <= 10 :
+                msg = "Please enter a serial number."
+              else:
+                serial = in_message.split('serial ')[1]
+                msg = get_coveragebySerial(serial)
             else:
                 msg = "Sorry, but I did not understand your request. Type `Help me` to see what I can do"
             if msg != None:
