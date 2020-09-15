@@ -1,6 +1,7 @@
 from pprint import pprint
 import requests
 import json
+from flask import jsonify
 import sys
 from auth import get_token
 import os
@@ -48,6 +49,7 @@ def help_me():
            "`pid` - Provide a product ID and I will reply with End of Life Data.  e.g. *pid C3925-AX/K9*<br/>" \
            "`serial` - Provide a serial and I will reply with Smartnet Coverage and End of Life Data. e.g. *serial FHX75UH03459"\
            "" 
+            #add option to send email for feedback.
 
 def greetings():
 
@@ -88,9 +90,10 @@ def get_eoxbyPID(hwPID):
 
 
 def get_coveragebySerial(serial):
-  """returns coverage data when given a serial."""
+  """returns coverage data when given a serail... need to add in EoX info too later"""
   token = get_token(client_id, client_secret)
   url = "https://api.cisco.com/sn2info/v2/coverage/summary/serial_numbers/" + serial
+  #url = "https://api.cisco.com/sn2info/v2/coverage/summary/serial_numbers/SSI184805DX"
   headers = {
     'Content-Type': "application/json",
     'authorization': "" + token['token_type'] + " " + token['access_token'],
@@ -102,6 +105,7 @@ def get_coveragebySerial(serial):
   data = json.loads(response.text)
   if 'ErrorResponse' in data['serial_numbers'][0].keys():
       return_val = data['serial_numbers'][0]['ErrorResponse']['APIError']['ErrorDescription']
+      #print data['serial_numbers'][0]['ErrorResponse']['APIError']['ErrorDescription']
   elif 'serial_numbers' in data.keys():
     
     pid = data['serial_numbers'][0]["base_pid_list"][0]["base_pid"]
@@ -109,26 +113,29 @@ def get_coveragebySerial(serial):
     serviceLevel = data['serial_numbers'][0]["service_line_descr"]
     endDate = data['serial_numbers'][0]["covered_product_line_end_date"]
     contractNum = data['serial_numbers'][0]["service_contract_number"]  
-    contractNum = contractNum[5:]
+    #contractNum = "xxxx" + contractNum[5:]
    
     return_val = "**Product ID:** ................. " + pid +\
       "<br>**Coverage Status:** ....... " + status +\
       "<br>**Service Level:** ............. " + serviceLevel +\
       "<br>**Covered End Date:** .... " + endDate +\
-      "<br>**Contract Number:** ..... xxxxx" + contractNum
+      "<br>**Contract Number:** ..... " + contractNum +\
+      "<br><br>Find more info at https://ccrc.cisco.com/ccwr/ or https://cway.cisco.com/sncheck/"
   else:
     print "Item not found"
     return_val = "Something went wrong"
     
   return return_val
 
-
+auth_user_domains = ['@cisco.com', '@marriott.com', '@marriott-sp.com']
   
 app = Flask(__name__)
 @app.route('/', methods=['GET', 'POST'])
 def teams_webhook():
     if request.method == 'POST':
         webhook = request.get_json(silent=True)
+        requester = webhook['data']['personEmail']
+        requester = requester[ requester.find("@") : ]
         if webhook['data']['personEmail']!= bot_email:
             pprint(webhook)
         if webhook['resource'] == "memberships" and webhook['data']['personEmail'] == bot_email:
@@ -142,6 +149,7 @@ def teams_webhook():
                             )
         msg = None
         if "@webex.bot" not in webhook['data']['personEmail']:
+          if requester in auth_user_domains:
             result = send_get(
                 'https://api.ciscospark.com/v1/messages/{0}'.format(webhook['data']['id']))
             in_message = result.get('text', '').lower()
@@ -164,10 +172,14 @@ def teams_webhook():
                 msg = get_coveragebySerial(serial)
             else:
                 msg = "Sorry, but I did not understand your request. Type `Help me` to see what I can do"
-            if msg != None:
+          else:
+              msg = "User not Authorized"
+          if msg != None:
                 send_post("https://api.ciscospark.com/v1/messages",
                                 {"roomId": webhook['data']['roomId'], "markdown": msg})
+
         return "true"
+
     elif request.method == 'GET':
         message = "<center><img src=\"https://cdn-images-1.medium.com/max/800/1*wrYQF1qZ3GePyrVn-Sp0UQ.png\" alt=\"Webex Teams Bot\" style=\"width:256; height:256;\"</center>" \
                   "<center><h2><b>Congratulations! Your <i style=\"color:#ff8000;\">%s</i> bot is up and running.</b></h2></center>" \
